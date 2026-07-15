@@ -1,0 +1,184 @@
+################################## Stage sur FDA ###############################
+
+# Importation des bibliotheques
+library(reticulate)
+library(fda)
+library(fda.usc)
+library(fdasrvf)
+
+#--------------------- Transformation en images binaires -----------------------
+
+# Importation de fichiers
+np <- import("numpy", convert = FALSE)
+
+# Extraire du fichier X_segmented 
+x_seg <- np$load("C:/Users/kevin/Downloads/X_segmented.npy", mmap_mode = "r")
+
+# Pour produire des images en noir et blanc
+bw_logical_py <- x_seg$any(axis = 3L)
+
+# Images sous forme de booleens
+bw_all_logical <- py_to_r(bw_logical_py)
+
+# Transformation en image binaire (0 et 1 pour differencier les 2 couleurs)
+bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical))
+
+# Sauvegarde du nouveau fichier cree
+saveRDS(
+  bw_all, 
+  file = "C:/Users/kevin/Downloads/X_binaire2.rds", 
+  compress = FALSE
+)
+
+# Essai pour charger le nouveau fichier cree
+test_load <- readRDS("C:/Users/kevin/Downloads/X_binaire2.rds")
+# Exemple de code pour voir une des images binaires quelconque
+une_image <- bw_all[5, , ]
+# Affichage de l'image binaire
+image(une_image, col = c("black", "white"), useRaster = TRUE)
+
+#------------------------- Extraction de contours ------------------------------
+
+# Lecture des donnees
+donnees_grains <- readRDS("C:/Users/kevin/Downloads/X_binaire2.rds")
+
+# Nombre de grains de beaute dans les donnees
+nb_images <- dim(donnees_grains)[1]
+
+# Liste pour stocker les contours contenant les coordonnees
+liste_contours <- vector("list", nb_images)
+
+# Utilisation de l'algorithme de Marching Square pour tracer les contours
+for (index in 1:nb_images) {
+  image_quelconque <- donnees_grains[index, , ]
+  contour_trace <- contourLines(
+    x = 1:nrow(image_quelconque),
+    y = 1:ncol(image_quelconque),
+    z = image_quelconque,
+    levels = 0.3
+  )
+  
+  # Si la longueur du contour est positive, alors, tout s'est bien passe
+  if (length(contour_trace) > 0) {
+    # On extrait le premier contour trouvé
+    df_contour <- data.frame(
+      x = contour_trace[[1]]$x,
+      y = contour_trace[[1]]$y
+    )
+    
+    # Stocker les coordonnes du contour
+    liste_contours[[index]] <- df_contour
+  } else {
+    liste_contours[[index]] <- NULL
+  }
+    
+  # Message pour avertir que les contours ont bien ete traites
+  if (index %% 100 == 0) {
+    message("L'image a ete bien traitee.")
+  }
+} 
+
+# Sauvegarde de ce nouveau fichier contenant les contours sous forme numerique
+saveRDS(liste_contours, "C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
+
+## Pour voir un exemple de contour
+# Chargement du fichier
+mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
+
+# Index choisi pour commencer le contour
+index_choisi <- 42 # au hasard
+un_contour <- mes_contours[[index_choisi]] 
+
+# Tracer le contour du grain de beaute
+if (!is.null(un_contour)) {
+  plot(un_contour$x, un_contour$y, 
+       type = "l",          # "ligne continue
+       col = "black",       # Couleur du contour
+       lwd = 2,             # Épaisseur de la ligne
+       asp = 1,             
+       main = paste("Contour extrait du grain de beauté #", index_choisi),
+       xlab = "Coordonnées X", 
+       ylab = "Coordonnées Y")
+} 
+
+#--------------------------- Lissage + Alignement ------------------------------
+
+# Chargement du fichier contenant les contours extraits
+mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
+
+
+i <- 1                                     # index initial
+nb_images <- 7793                          # quantite de grains de beaute 
+liste_fourier <- vector("list", nb_images) # liste pour stocker les donnees
+
+# Utilisation de la base de Fourier pour les contours lisses et fermes
+base_fourier <- create.fourier.basis(rangeval = c(0,2*pi), nbasis = 101)
+
+# Boucle pour parcourir tous les grains de beaute
+while (i <= nb_images) {
+  
+  # On choisit un contour par iteration
+  contour_choisi <- mes_contours[[i]]
+  
+  # Si le contour est reel 
+  if (!is.null(contour_choisi) && nrow(contour_choisi) > 5) {
+    
+    # Centrage des donnees
+    x_centre <- contour_choisi$x - mean(contour_choisi$x)
+    y_centre <- contour_choisi$y - mean(contour_choisi$y)
+    
+    coord_centre <- data.frame(x = x_centre, y = y_centre)
+    pca <- prcomp(coord_centre, center = FALSE, scale. = FALSE)
+    vecteur_principal <- pca$rotation[, 1]
+    angle_principal <- atan2(vecteur_principal[2], vecteur_principal[1])
+    
+    theta_rotation <- -angle_principal
+    cos_t <- cos(theta_rotation)
+    sin_t <- sin(theta_rotation)
+    
+    # Alignement des coordonnees
+    x_aligne <- x_centre * cos_t - y_centre *sin_t
+    y_aligne <- x_centre * sin_t + y_centre * cos_t
+    
+    # Conversion en donnees polaires
+    theta <- atan2(y_aligne, x_aligne)
+    rayon <- sqrt(x_aligne^2 + y_aligne^2)
+    
+    # On ramene l'inveralle d'angle de 0 a 2pi
+    theta_reconversion <- ifelse(theta < 0, theta + 2*pi, theta)
+    
+    # Triage
+    ordre <- order(theta_reconversion)
+    t_discret <- theta_reconversion[ordre] # Conversion en coordonnees polaires
+    y_discret <- rayon[ordre]              # Conversion en coordonnees polaires
+    
+    # On essaie de lisser pour tous les grains de beaute
+    liste_fourier[[i]] <- tryCatch({
+      
+      # Lissage des donnees avec smooth.basis
+      lissage_resultat <- smooth.basis(argvals = t_discret, y = y_discret, fdParobj = base_fourier)
+      
+      lissage_resultat$fd
+      
+    }, error = function(e) {
+      
+      # Si on n'arrive pas a lisser
+      NULL 
+    })
+  } else {
+    liste_fourier[[i]] <- NULL
+  }
+  
+  # incrementation de l'index
+  i <- i + 1
+  
+  # Pour voir si ca progresse ou pas
+  if (i %% 500 == 0) {
+    message("Lissage bel et bien fonctionne")
+  }
+}
+
+# Sauvegarde du lissage avec la base de Fourier
+saveRDS(liste_fourier, "C:/Users/kevin/Downloads/Stage_FDA/contours_lisses_fourier.rds")
+
+#------------------------------------ FPCA -------------------------------------
