@@ -182,3 +182,56 @@ while (i <= nb_images) {
 saveRDS(liste_fourier, "C:/Users/kevin/Downloads/Stage_FDA/contours_lisses_fourier.rds")
 
 #------------------------------------ FPCA -------------------------------------
+
+# Chargement du fichier contenant le lissage des grains de beaute
+contours_fourier <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_lisses_fourier.rds")
+
+# On s'assure de tenir compte seulement les lissages qui ont fonctionne
+indices_valides <- which(!sapply(contours_fourier, is.null))
+
+# Liste pour stocker les courbes des grains de beaute
+liste_fpca <- liste_fourier[indices_valides] 
+
+# Quantite de grains de beaute que le lissage a fonctionn
+nb_valides <- length(liste_fpca)
+
+# Valeurs des coefficients de Fourier
+coefficients_fourier <- sapply(liste_fpca, function(x) x$coefs)
+
+# Rappel a la base de Fourier avec tels coefficients
+base_fourier2 <- liste_fpca[[1]]$basis
+
+# Contient tous les contours avec les valeurs des coefficients
+contours_total <- fd(coef = coefficients_fourier, basisobj = base_fourier2)
+
+# Utilisation de l'algorithme de FPCA
+resultats_fpca <- pca.fd(contours_total, nharm = 28)
+
+# Valeurs de pourcentage des variances les plus grandes
+variance_pourcentage <- resultats_fpca$varprop
+
+# Variance additionne pour savoir quand s'arreter pour l'analyse
+variance_cumulee <- cumsum(variance_pourcentage)
+
+# Calcul des valeurs des plus grandes variances
+affichage_variance <- data.frame(
+  
+  # Les 10 premieres fonctions propres ayant les plus grandes variances
+  Composante = 1:10, 
+  
+  # Calcul arrondi de chacune des variances
+  variance_individuelle <- round(variance_pourcentage[1:10] * 100, 2),
+  variance_cumulee <- round(variance_cumulee[1:10] * 100, 2)
+)
+
+# Affichage des plus grandes variances
+print(affichage_variance)
+
+# Affichage des scores harmoniques
+resultats_grain_beaute <- resultats_fpca$harmscr
+
+# Sauvegarde des scores dans un fichier
+saveRDS(resultats_grain_beaute, "C:/Users/kevin/Downloads/Stage_FDA/pourcentage_fpca.rds")
+
+
+
