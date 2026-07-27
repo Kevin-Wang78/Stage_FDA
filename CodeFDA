@@ -5,6 +5,9 @@ library(reticulate)
 library(fda)
 library(fda.usc)
 library(fdasrvf)
+library(MFPCA)
+library(funData)
+library(ggplot2)
 
 #--------------------- Transformation en images binaires -----------------------
 
@@ -33,7 +36,7 @@ saveRDS(
 # Essai pour charger le nouveau fichier cree
 test_load <- readRDS("C:/Users/kevin/Downloads/X_binaire2.rds")
 # Exemple de code pour voir une des images binaires quelconque
-une_image <- bw_all[5, , ]
+une_image <- bw_all[42, , ]
 # Affichage de l'image binaire
 image(une_image, col = c("black", "white"), useRaster = TRUE)
 
@@ -82,6 +85,7 @@ for (index in 1:nb_images) {
 saveRDS(liste_contours, "C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
 
 ## Pour voir un exemple de contour
+
 # Chargement du fichier
 mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
 
@@ -106,132 +110,224 @@ if (!is.null(un_contour)) {
 # Chargement du fichier contenant les contours extraits
 mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
 
+# Filtrer les contours valides 
+contours_valides <- Filter(function(x) !is.null(x) && nrow(x) > 120, mes_contours)
 
-i <- 1                                     # index initial
-nb_images <- 7793                          # quantite de grains de beaute 
-liste_fourier <- vector("list", nb_images) # liste pour stocker les donnees
+# Changement en base de Fourier 
+base_fourier <- create.fourier.basis(rangeval = c(0, 2*pi), nbasis = 101)
 
-# Utilisation de la base de Fourier pour les contours lisses et fermes
-base_fourier <- create.fourier.basis(rangeval = c(0,2*pi), nbasis = 101)
-
-# Boucle pour parcourir tous les grains de beaute
-while (i <= nb_images) {
+# Centrer les contours
+contour_to_fd <- function(contour) {
   
-  # On choisit un contour par iteration
-  contour_choisi <- mes_contours[[i]]
+  # Centrage des donnees
+  x <- contour$x - mean(contour$x)
+  y <- contour$y - mean(contour$y)
   
-  # Si le contour est reel 
-  if (!is.null(contour_choisi) && nrow(contour_choisi) > 5) {
-    
-    # Centrage des donnees
-    x_centre <- contour_choisi$x - mean(contour_choisi$x)
-    y_centre <- contour_choisi$y - mean(contour_choisi$y)
-    
-    coord_centre <- data.frame(x = x_centre, y = y_centre)
-    pca <- prcomp(coord_centre, center = FALSE, scale. = FALSE)
-    vecteur_principal <- pca$rotation[, 1]
-    angle_principal <- atan2(vecteur_principal[2], vecteur_principal[1])
-    
-    theta_rotation <- -angle_principal
-    cos_t <- cos(theta_rotation)
-    sin_t <- sin(theta_rotation)
-    
-    # Alignement des coordonnees
-    x_aligne <- x_centre * cos_t - y_centre *sin_t
-    y_aligne <- x_centre * sin_t + y_centre * cos_t
-    
-    # Conversion en donnees polaires
-    theta <- atan2(y_aligne, x_aligne)
-    rayon <- sqrt(x_aligne^2 + y_aligne^2)
-    
-    # On ramene l'inveralle d'angle de 0 a 2pi
-    theta_reconversion <- ifelse(theta < 0, theta + 2*pi, theta)
-    
-    # Triage
-    ordre <- order(theta_reconversion)
-    t_discret <- theta_reconversion[ordre] # Conversion en coordonnees polaires
-    y_discret <- rayon[ordre]              # Conversion en coordonnees polaires
-    
-    # On essaie de lisser pour tous les grains de beaute
-    liste_fourier[[i]] <- tryCatch({
-      
-      # Lissage des donnees avec smooth.basis
-      lissage_resultat <- smooth.basis(argvals = t_discret, y = y_discret, fdParobj = base_fourier)
-      
-      lissage_resultat$fd
-      
-    }, error = function(e) {
-      
-      # Si on n'arrive pas a lisser
-      NULL 
-    })
-  } else {
-    liste_fourier[[i]] <- NULL
-  }
+  # Paramétrisation par longueur d'arc ramenée sur [0, 2pi]
+  s <- c(0, cumsum(sqrt(diff(x)^2 + diff(y)^2)))
+  t <- 2 * pi * s / max(s)
   
-  # incrementation de l'index
-  i <- i + 1
-  
-  # Pour voir si ca progresse ou pas
-  if (i %% 500 == 0) {
-    message("Lissage bel et bien fonctionne")
-  }
+  # Lissage par Fourier
+  list(
+    x = smooth.basis(t, x, fdParobj = base_fourier)$fd,
+    y = smooth.basis(t, y, fdParobj = base_fourier)$fd
+  )
 }
 
-# Sauvegarde du lissage avec la base de Fourier
-saveRDS(liste_fourier, "C:/Users/kevin/Downloads/Stage_FDA/contours_lisses_fourier.rds")
+# fonction qui va seulement tenir compte des contours valides
+formes <- lapply(contours_valides, contour_to_fd)
+
+# Alignement par Procrustes 
+temps <- seq(0, 2*pi, length.out = 200) # Premier parametre
+deltas <- seq(0, 2*pi, length.out = 40) # Deuxieme parametre
+
+# Fonction pour trouver la rotation optimale 
+rotation_opt <- function(x, y, mx, my) {
+  
+  # Estimation de theta avec un delta fixe
+  atan2(sum(x*my - y*mx), sum(x*mx + y*my))
+}
+
+moyenne <- formes[[1]]
+nb_iter <- 10
+
+# Iteration dans le but de voir si l'alignement a bien ete effectue
+for (iter in 1:nb_iter) {
+  
+  # Evaluer une fonction a tel instant pour trouver les valeurs de x et de y
+  mx <- eval.fd(temps, moyenne$x)
+  my <- eval.fd(temps, moyenne$y)
+  
+  
+  formes_alignees <- lapply(formes, function(f) {
+    x <- eval.fd(temps, f$x)
+    y <- eval.fd(temps, f$y)
+    
+    # Rechercher le meilleur decalage
+    erreurs <- sapply(deltas, function(d) {
+      x_s <- approx(temps, x, (temps + d) %% (2*pi), rule = 2)$y
+      y_s <- approx(temps, y, (temps + d) %% (2*pi), rule = 2)$y
+      sum((x_s - mx)^2 + (y_s - my)^2)
+    })
+    
+    # Trouver le delta optimal qui minimise les erreurs
+    d_opt <- deltas[which.min(erreurs)]
+    x_shift <- approx(temps, x, (temps + d_opt) %% (2*pi), rule = 2)$y
+    y_shift <- approx(temps, y, (temps + d_opt) %% (2*pi), rule = 2)$y
+    
+    # Rotation optimale
+    theta <- rotation_opt(x_shift, y_shift, mx, my)
+    
+    list(
+      x = x_shift * cos(theta) - y_shift * sin(theta),
+      y = x_shift * sin(theta) + y_shift * cos(theta)
+    )
+  })
+  
+  # Mise à jour de la moyenne apres avoir effectue le lissage et l'alignement
+  moyenne$x <- smooth.basis(temps, rowMeans(sapply(formes_alignees, `[[`, "x")), base_fourier)$fd
+  moyenne$y <- smooth.basis(temps, rowMeans(sapply(formes_alignees, `[[`, "y")), base_fourier)$fd
+  
+  message("Itération ", iter, " / ", nb_iter, " terminée")
+}
+
+# Sauvegarde des resultats
+saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
 
 #------------------------------------ FPCA -------------------------------------
 
-# Chargement du fichier contenant le lissage des grains de beaute
-contours_fourier <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_lisses_fourier.rds")
+# Chargement des contours alignés par ICF et qui ont ete lisses
+contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
 
-# On s'assure de tenir compte seulement les lissages qui ont fonctionne
-indices_valides <- which(!sapply(contours_fourier, is.null))
+# Filtrer les contours qui existent
+indices_valides <- which(!sapply(contours_ICF, is.null))
+formes_valides  <- contours_ICF[indices_valides]
 
-# Liste pour stocker les courbes des grains de beaute
-liste_fpca <- liste_fourier[indices_valides] 
+# Calculer le nombre de contours valides
+nb_valides <- length(formes_valides)
 
-# Quantite de grains de beaute que le lissage a fonctionn
-nb_valides <- length(liste_fpca)
+# Message qui montre le nombre de contours valides
+message("Nombre de contours utilisés pour FPCA : ", nb_valides)
 
-# Valeurs des coefficients de Fourier
-coefficients_fourier <- sapply(liste_fpca, function(x) x$coefs)
+# Grille temporelle correspondant au premier script
+temps <- seq(0, 2 * pi, length.out = 200)
 
-# Rappel a la base de Fourier avec tels coefficients
-base_fourier2 <- liste_fpca[[1]]$basis
+# Extraction des matrices contenant les coordonnees
+matrice_X <- t(sapply(formes_valides, function(f) f$x))
+matrice_Y <- t(sapply(formes_valides, function(f) f$y))
 
-# Contient tous les contours avec les valeurs des coefficients
-contours_total <- fd(coef = coefficients_fourier, basisobj = base_fourier2)
+# Utilisation de funData pour mieux representer, manipuler et analyser des donnees fonctionnelles
+fun_X <- funData(argvals = temps, X = matrice_X)
+fun_Y <- funData(argvals = temps, X = matrice_Y)
 
-# Utilisation de l'algorithme de FPCA
-resultats_fpca <- pca.fd(contours_total, nharm = 28)
+# Fournir les donnees pour que ce soit utilisables pour FPCA
+donnees_fpca <- multiFunData(fun_X, fun_Y)
 
-# Valeurs de pourcentage des variances les plus grandes
-variance_pourcentage <- resultats_fpca$varprop
-
-# Variance additionne pour savoir quand s'arreter pour l'analyse
-variance_cumulee <- cumsum(variance_pourcentage)
-
-# Calcul des valeurs des plus grandes variances
-affichage_variance <- data.frame(
-  
-  # Les 10 premieres fonctions propres ayant les plus grandes variances
-  Composante = 1:10, 
-  
-  # Calcul arrondi de chacune des variances
-  variance_individuelle <- round(variance_pourcentage[1:10] * 100, 2),
-  variance_cumulee <- round(variance_cumulee[1:10] * 100, 2)
+# Execution de FPCA avec les contours
+resultats_fpca <- MFPCA(
+  mFData = donnees_fpca,
+  M = 2, # Contours representees par 2 variables explicatives (X et Y)
+  uniExpansions = list(
+    list(type = "uFPCA"), # Décomposition FPCA univariée pour X
+    list(type = "uFPCA")  # Décomposition FPCA univariée pour Y
+  )
 )
 
-# Affichage des plus grandes variances
+valeurs_propres <- resultats_fpca$values
+
+# Calculer la variance expliquee en pourcentage pour chaque composante (fonction)
+variance_pourcentage <- valeurs_propres / sum(valeurs_propres)
+
+# Calculer la variance cumulee correspondant a la somme des variances expliquees
+variance_cumulee <- cumsum(variance_pourcentage)
+
+# Fonction qui permet d'afficher les variances expliquees en pourcentage
+affichage_variance <- data.frame(
+  Composante = 1:length(valeurs_propres),
+  variance_individuelle = round(variance_pourcentage * 100, 2),
+  variance_cumulee = round(variance_cumulee * 100, 2)
+)
+
+# Affichage des variances expliquees
 print(affichage_variance)
 
-# Affichage des scores harmoniques
-resultats_grain_beaute <- resultats_fpca$harmscr
+# Scores MFPCA
+scores_FPCA <- resultats_fpca$scores
 
-# Sauvegarde des scores dans un fichier
-saveRDS(resultats_grain_beaute, "C:/Users/kevin/Downloads/Stage_FDA/pourcentage_fpca.rds")
+# Configuration de la fenêtre graphique
+barplot_heights <- barplot(
+  affichage_variance$variance_individuelle,
+  names.arg = affichage_variance$Composante,
+  col = "gray",
+  ylim = c(0, 110),
+  xlab = "Composante Principale (PC)",
+  ylab = "Pourcentage de variance (%)",
+  main = "Diagramme d'éboulis de la MFPCA"
+)
+
+# Ajout de la courbe de variance cumulée
+lines(barplot_heights, affichage_variance$variance_cumulee, col = "darkred", lwd = 2, type = "b", pch = 19)
+
+# Légende
+legend("right", legend = c("Variance individuelle", "Variance cumulée"),
+       fill = c("steelblue", NA), col = c(NA, "darkred"), lty = c(NA, 1), pch = c(NA, 19), bty = "n")
+
+# Fonction pour visualiser l'effet géométrique d'une composante 
+library(ggplot2)
+
+# Fonction pour trouver la description des composantes principales
+tracer_mode_variation <- function(mfpca_obj, pc = 1, k = 2) {
+  
+  # Grille temporelle [0, 2pi]
+  temps <- seq(0, 2*pi, length.out = 200)
+  
+  # Évaluation des fonctions moyennes mu_x(t) et mu_y(t)
+  mu_x <- mfpca_obj$meanFunction[[1]]@X[1, ]
+  mu_y <- mfpca_obj$meanFunction[[2]]@X[1, ]
+  
+  # Évaluation des fonctions propres (harmonies) pour la PC choisie
+  ef_x <- mfpca_obj$functions[[1]]@X[pc, ]
+  ef_y <- mfpca_obj$functions[[2]]@X[pc, ]
+  
+  # Écart-type du score pour la PC
+  sd_score <- sd(mfpca_obj$scores[, pc])
+  
+  # Construction des contours (+/- k * SD)
+  df_plot <- data.frame(
+    temps = rep(temps, 3),
+    Type = rep(c("Forme Moyenne", paste0("+", k, " SD"), paste0("-", k, " SD")), each = length(temps)),
+    x = c(mu_x, mu_x + k * sd_score * ef_x, mu_x - k * sd_score * ef_x),
+    y = c(mu_y, mu_y + k * sd_score * ef_y, mu_y - k * sd_score * ef_y)
+  )
+  
+  # Graphique ggplot2
+  ggplot(df_plot, aes(x = x, y = y, color = Type, linetype = Type)) +
+    geom_path(linewidth = 1) +
+    scale_color_manual(values = c("Forme Moyenne" = "black", "+2 SD" = "red", "-2 SD" = "blue")) +
+    scale_linetype_manual(values = c("Forme Moyenne" = "solid", "+2 SD" = "dashed", "-2 SD" = "dotted")) +
+    coord_fixed() +
+    labs(
+      title = paste0("Mode de variation géométrique : PC", pc),
+      subtitle = "Noir : Moyenne | Rouge : +2 SD | Bleu : -2 SD",
+      x = "Coordonnée X", y = "Coordonnée Y"
+    ) +
+    theme_minimal(base_size = 12)
+}
+
+# Relancez l'affichage pour connaitre la description de PC2
+graphique_PC2 <- tracer_mode_variation(resultats_fpca, pc = 2, k = 2)
+print(graphique_PC2)
+
+# Générer le graphique pour la composante 1 (PC1)
+graphique_PC1 <- tracer_mode_variation(resultats_fpca, pc = 1, k = 2)
+
+# Afficher le graphique
+print(graphique_PC1)
+
+# Sauvegarde des scores
+saveRDS(scores_FPCA, "C:/Users/kevin/Downloads/Stage_FDA/scores_FPCA_ICF.rds")
+
+############################### Classification ##################################
 
 
 
