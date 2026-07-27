@@ -575,6 +575,73 @@ message("Spécificité           : ", round(specificite * 100, 2), "%")
 message("Score F1              : ", round(f1_score * 100, 2), "%")
 message("AUC                   : ", round(valeur_auc * 100, 2), "%")
 
+########################## Graphique de FPCA####################################
+
+# Pourcentage de variance expliquée
+variances <- pca_directe$sdev^2
+var_pct <- round((variances / sum(variances)) * 100, 2)
+
+# Descriptions géométriques ajustées aux contours 2D
+descriptions <- c(
+  "Taille globale / Aire",
+  "Allongement préférentiel",
+  "Asymétrie / Élongation secondaire",
+  "Irrégularités locales des bordures"
+)
+
+# Assemblage du tableau
+tableau_fpca_4 <- data.frame(
+  Composante = paste0("PC", 1:4),
+  Description = descriptions[1:4],
+  `Variance (%)` = var_pct[1:4]
+)
+
+# Affichage des variances
+print(tableau_fpca_4)
+
+# Préparation de la grille 2x2
+par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
+
+# Forme moyenne globale (200 points X et 200 points Y)
+mean_x <- colMeans(matrice_X)
+mean_y <- colMeans(matrice_Y)
+
+# Boucle pour générer les graphiques de PC1, PC2, PC3 et PC4
+for (k in 1:4) {
+  
+  # Écart-type associé à la k-ième composante
+  sd_k <- pca_directe$sdev[k]
+  
+  # Vecteurs propres (rotation) pour X (1:200) et Y (201:400)
+  eigen_x <- pca_directe$rotation[1:200, k]
+  eigen_y <- pca_directe$rotation[201:400, k]
+  
+  # Calcul des formes déplacées à +2 SD et -2 SD
+  plus_2sd_x <- mean_x + 2 * sd_k * eigen_x
+  plus_2sd_y <- mean_y + 2 * sd_k * eigen_y
+  
+  moins_2sd_x <- mean_x - 2 * sd_k * eigen_x
+  moins_2sd_y <- mean_y - 2 * sd_k * eigen_y
+  
+  # Tracé de la déformation +2 SD (rouge)
+  plot(plus_2sd_x, plus_2sd_y, type = "l", col = "red", lwd = 2, asp = 1,
+       main = paste0("PC", k, " (", var_pct[k], "%)"),
+       xlab = "X", ylab = "Y")
+  
+  # Ajout de la déformation -2 SD (bleu pointillés)
+  lines(moins_2sd_x, moins_2sd_y, col = "blue", lwd = 2, lty = 2)
+  
+  # Ajout de la forme moyenne originale (noir)
+  lines(mean_x, mean_y, col = "black", lwd = 1.5)
+  
+  # Légende
+  legend("topright", legend = c("+2 SD", "Moyenne", "-2 SD"),
+         col = c("red", "black", "blue"), lty = c(1, 1, 2), cex = 0.8)
+}
+
+# Réinitialiser les paramètres graphiques
+par(mfrow = c(1, 1))
+
 
 
 
