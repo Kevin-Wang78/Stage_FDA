@@ -452,9 +452,129 @@ message("AUC                   : ", round(valeur_auc * 100, 2), "%")
 
 #----------------------------------- FPCA --------------------------------------
 
+# Chargement des contours alignés par ICF et qui ont ete lisses
+contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
 
+# Filtrer les contours qui existent
+indices_valides <- which(!sapply(contours_ICF, is.null))
+formes_valides  <- contours_ICF[indices_valides]
+
+# Calculer le nombre de contours valides
+nb_valides <- length(formes_valides)
+
+# Message qui montre le nombre de contours valides
+message("Nombre de contours utilisés pour FPCA : ", nb_valides)
+
+# Grille temporelle correspondant au premier script
+temps <- seq(0, 2 * pi, length.out = 200)
+
+# Extraction des matrices contenant les coordonnees
+matrice_X <- t(sapply(formes_valides, function(f) f$x))
+matrice_Y <- t(sapply(formes_valides, function(f) f$y))
+
+# Concaténation des coordonnées lissées X et Y (200 + 200 = 400 colonnes)
+matrice_concat <- cbind(matrice_X, matrice_Y)
+
+# PCA classique sur les fonctions lissées
+pca_directe <- prcomp(matrice_concat, center = TRUE, scale. = FALSE)
+
+# Extraction des 4 premiers scores
+scores_FPCA <- pca_directe$x[, 1:4]
+colnames(scores_FPCA) <- c("PC1", "PC2", "PC3", "PC4")
+
+# Calcul des variances de chaque composante 
+variances <- pca_directe$sdev^2
+
+# Conversion en pourcentage de la variance totale
+variance_pourcentage <- (variances / sum(variances)) * 100
+
+# Calcul de la variance cumulée
+variance_cumulee <- cumsum(variance_pourcentage)
+
+# Création du tableau récapitulatif pour les 4 premières composantes
+tableau_variance <- data.frame(
+  Composante = c("PC1", "PC2", "PC3", "PC4"),
+  `Variance_Expliquee (%)` = round(variance_pourcentage[1:4], 2),
+  `Variance_Cumulee (%)`  = round(variance_cumulee[1:4], 2)
+)
+
+# Affichage propre dans la console
+print(tableau_variance)
 
 #----------------------------- Classification ----------------------------------
+
+## UTILISATION DE REGRESSION LOGISTIQUE FONCTIONNELLE (pour la classification avec 4 composantes)
+
+# Chargement du fichier contenant toutes les images initiales de tous les grains de beaute
+meta_donnees <- read.csv("C:/Users/kevin/Downloads/Stage_FDA/HAM10000_metadata.csv")
+
+# Création de la variable binaire Y (1 = Mélanome et 0 sinon)
+meta_donnees$Y <- ifelse(meta_donnees$dx == "mel", 1, 0)
+
+# Alignement sur les contours valides retenus
+y_valides <- meta_donnees$Y[indices_valides]
+
+# Assemblage du tableau de données pour la classification avec PC1, PC2 et PC3
+df_classification <- data.frame(
+  Y   = factor(y_valides),     # Cible (0 ou 1)
+  PC1 = scores_FPCA[, "PC1"],  # Score PC1
+  PC2 = scores_FPCA[, "PC2"],  # Score PC2
+  PC3 = scores_FPCA[, "PC3"],  # Score PC3
+  PC4 = scores_FPCA[, "PC4"]   # Score PC4
+)
+
+# Découpage stratifié contenant 80% d'entraînement et 20% de test
+set.seed(123)
+train_index <- createDataPartition(df_classification$Y, p = 0.8, list = FALSE)
+
+# Jeu de données contenant les données qui vont être entraînées
+donnees_train <- df_classification[train_index, ]
+
+# Jeu de données contenant les données qui vont être testées
+donnees_test  <- df_classification[-train_index, ]
+
+# Pondération des classes
+poids_0 <- 1
+poids_1 <- sum(donnees_train$Y == 0) / sum(donnees_train$Y == 1)
+poids_train <- ifelse(donnees_train$Y == 1, poids_1, poids_0)
+
+# Entraînement de la Régression Logistique avec pondération (PC1, PC2, PC3)
+modele_logit <- glm(
+  Y ~ PC1 + PC2 + PC3 + PC4, 
+  data = donnees_train, 
+  family = binomial(link = "logit"), 
+  weights = poids_train
+)
+
+# Affichage des coefficients (alpha, beta_1, beta_2, beta_3)
+summary(modele_logit)
+
+# Évaluation des prédictions sur le jeu de test
+probabilites_test <- predict(modele_logit, newdata = donnees_test, type = "response")
+
+# Seuil ajusté à 0.50
+seuil_decision <- 0.50
+y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
+
+# Matrice de confusion et métriques globales
+matrice_eval <- confusionMatrix(y_pred_test, donnees_test$Y, positive = "1")
+print(matrice_eval)
+
+# Calcul et affichage clair des métriques de performance
+exactitude  <- matrice_eval$overall["Accuracy"]
+sensibilite <- matrice_eval$byClass["Sensitivity"]
+specificite <- matrice_eval$byClass["Specificity"]
+f1_score    <- matrice_eval$byClass["F1"]
+valeur_auc  <- auc(donnees_test$Y, probabilites_test)
+
+# Affichage des métriques de performance
+message("=== RÉSULTATS DE PERFORMANCE (Seuil = ", seuil_decision, ") ===")
+message("Accuracy (Exactitude) : ", round(exactitude * 100, 2), "%")
+message("Sensibilité (Rappel)  : ", round(sensibilite * 100, 2), "%")
+message("Spécificité           : ", round(specificite * 100, 2), "%")
+message("Score F1              : ", round(f1_score * 100, 2), "%")
+message("AUC                   : ", round(valeur_auc * 100, 2), "%")
+
 
 
 
