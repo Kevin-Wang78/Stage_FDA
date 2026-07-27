@@ -1,4 +1,6 @@
+################################################################################
 ################################## Stage sur FDA ###############################
+################################################################################
 
 # Importation des bibliotheques
 library(reticulate)
@@ -8,8 +10,10 @@ library(fdasrvf)
 library(MFPCA)
 library(funData)
 library(ggplot2)
+library(caret)
+library(pROC)
 
-#--------------------- Transformation en images binaires -----------------------
+###################### Transformation en images binaires #######################
 
 # Importation de fichiers
 np <- import("numpy", convert = FALSE)
@@ -40,7 +44,7 @@ une_image <- bw_all[42, , ]
 # Affichage de l'image binaire
 image(une_image, col = c("black", "white"), useRaster = TRUE)
 
-#------------------------- Extraction de contours ------------------------------
+########################## Extraction de contours ##############################
 
 # Lecture des donnees
 donnees_grains <- readRDS("C:/Users/kevin/Downloads/X_binaire2.rds")
@@ -105,7 +109,7 @@ if (!is.null(un_contour)) {
        ylab = "Coordonnées Y")
 } 
 
-#--------------------------- Lissage + Alignement ------------------------------
+############################ Lissage + Alignement ##############################
 
 # Chargement du fichier contenant les contours extraits
 mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
@@ -194,7 +198,9 @@ for (iter in 1:nb_iter) {
 # Sauvegarde des resultats
 saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
 
-#------------------------------------ FPCA -------------------------------------
+############################### 2 COMPOSANTES ##################################
+
+#---------------------------- FPCA (PC1 et PC2) --------------------------------
 
 # Chargement des contours alignés par ICF et qui ont ete lisses
 contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
@@ -327,7 +333,88 @@ print(graphique_PC1)
 # Sauvegarde des scores
 saveRDS(scores_FPCA, "C:/Users/kevin/Downloads/Stage_FDA/scores_FPCA_ICF.rds")
 
-############################### Classification ##################################
+#----------------------------- Classification ----------------------------------
+
+## UTILISATION DE REGRESSION LOGISTIQUE FONCTIONNELLE (pour la classification)
+
+# Chargement du fichier contenant toutes les images initiales de tous les grains de beaute
+meta_donnees <- read.csv("C:/Users/kevin/Downloads/Stage_FDA/HAM10000_metadata.csv")
+
+# Création de la variable binaire Y (1 = Mélanome et 0 sinon)
+meta_donnees$Y <- ifelse(meta_donnees$dx == "mel", 1, 0)
+
+# Alignement sur les contours valides retenus par votre MFPCA (7 770 contours)
+y_valides <- meta_donnees$Y[indices_valides]
+
+# Assemblage du tableau de données pour la classification
+df_classification <- data.frame(
+  Y = factor(y_valides),             # Cible (0 ou 1)
+  PC1 = resultats_fpca$scores[, 1],  # Score PC1
+  PC2 = resultats_fpca$scores[, 2]   # Score PC2 
+)
+
+# Découpage stratifié contenant 80% d'entraînement et 20% de test
+set.seed(123)
+train_index <- createDataPartition(df_classification$Y, p = 0.8, list = FALSE)
+
+# Jeu de données contenant les données qui vont être entraînées
+donnees_train <- df_classification[train_index, ]
+
+# Jeu de données contenant les données qui vont être testées
+donnees_test  <- df_classification[-train_index, ]
+
+# Ponderation des classes
+poids_0 <- 1
+poids_1 <- sum(donnees_train$Y == 0) / sum(donnees_train$Y == 1)
+poids_train <- ifelse(donnees_train$Y == 1, poids_1, poids_0)
+
+# Entraînement de la Régression Logistique avec pondération
+modele_logit <- glm(Y ~ PC1 + PC2, data = donnees_train, family = binomial(link = "logit"), weights = poids_train)
+
+# Affichage des coefficients alpha, beta_1 et beta_2
+summary(modele_logit)
+
+# Évaluation des prédictions sur le jeu de test
+probabilites_test <- predict(modele_logit, newdata = donnees_test, type = "response")
+
+# Seuil ajuste a 0.50
+seuil_decision <- 0.50
+y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
+
+# Matrice de confusion et métriques globales
+matrice_eval <- confusionMatrix(y_pred_test, donnees_test$Y, positive = "1")
+print(matrice_eval)
+
+# Calcul et affichage clair des métriques de performance
+exactitude  <- matrice_eval$overall["Accuracy"]
+sensibilite <- matrice_eval$byClass["Sensitivity"]
+specificite <- matrice_eval$byClass["Specificity"]
+f1_score    <- matrice_eval$byClass["F1"]
+valeur_auc <- auc(donnees_test$Y, probabilites_test)
+
+# Affichage des metriques de performance
+message("=== RÉSULTATS DE PERFORMANCE (Seuil = ", seuil_decision, ") ===")
+message("Accuracy (Exactitude) : ", round(exactitude * 100, 2), "%")
+message("Sensibilité (Rappel)  : ", round(sensibilite * 100, 2), "%")
+message("Spécificité           : ", round(specificite * 100, 2), "%")
+message("Score F1              : ", round(f1_score * 100,2), "%")
+message("AUC                   : ", round(valeur_auc * 100,2), "%")
+
+############################### 3 COMPOSANTES ##################################
+
+#----------------------------------- FPCA --------------------------------------
+
+
+
+#----------------------------- Classification ----------------------------------
+
+
+############################### 4 COMPOSANTES ##################################
+
+#----------------------------------- FPCA --------------------------------------
+
+
+#----------------------------- Classification ----------------------------------
 
 
 
