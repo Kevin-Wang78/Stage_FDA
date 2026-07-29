@@ -78,7 +78,7 @@ for (index in 1:nb_images) {
   } else {
     liste_contours[[index]] <- NULL
   }
-    
+  
   # Message pour avertir que les contours ont bien ete traites
   if (index %% 100 == 0) {
     message("L'image a ete bien traitee.")
@@ -109,13 +109,19 @@ if (!is.null(un_contour)) {
        ylab = "Coordonnées Y")
 } 
 
-############################ Lissage + Alignement ##############################
+##################### Lissage & Split Train/Test Initial #######################
 
 # Chargement du fichier contenant les contours extraits
 mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
 
-# Filtrer les contours valides 
-contours_valides <- Filter(function(x) !is.null(x) && nrow(x) > 120, mes_contours)
+# Filtrer les indices des contours valides 
+indices_valides_init <- which(sapply(mes_contours, function(x) !is.null(x) && nrow(x) > 120))
+contours_valides     <- mes_contours[indices_valides_init]
+
+# Alignement des métadonnées Y
+meta_donnees <- read.csv("C:/Users/kevin/Downloads/Stage_FDA/HAM10000_metadata.csv")
+meta_donnees$Y <- ifelse(meta_donnees$dx == "mel", 1, 0)
+y_valides <- meta_donnees$Y[indices_valides_init]
 
 # Changement en base de Fourier 
 base_fourier <- create.fourier.basis(rangeval = c(0, 2*pi), nbasis = 101)
@@ -140,81 +146,63 @@ contour_to_fd <- function(contour) {
   )
 }
 
-# fonction qui va seulement tenir compte des contours valides
+# Fonction qui va seulement tenir compte des contours valides
 formes <- lapply(contours_valides, contour_to_fd)
 
 saveRDS(formes, "C:/Users/kevin/Downloads/Stage_FDA/formes_lissees.rds")
 
-# Alignement par Procrustes 
+# Split Entrainement/Test
+set.seed(123)
+
+# 80% des donnees a l'entrainement et 20% des donnees au test
+train_indices <- createDataPartition(y_valides, p = 0.8, list = FALSE)
+
+# Formes qui vont etre dans l'entrainement
+formes_train <- formes[train_indices]
+y_train      <- y_valides[train_indices]
+
+# Formes qui vont etre dans le test
+formes_test  <- formes[-train_indices]
+y_test       <- y_valides[-train_indices]
+
+########################### Alignement par Procrustes ##########################
+
 temps <- seq(0, 2*pi, length.out = 200) # Premier parametre
 deltas <- seq(0, 2*pi, length.out = 40) # Deuxieme parametre
 
 # Fonction pour trouver la rotation optimale 
 rotation_opt <- function(x, y, x_reference, y_reference) {
-  
-  # Estimation de theta avec un delta fixe
   atan2(sum(x*y_reference - y*x_reference), sum(x*x_reference + y*y_reference))
 }
 
-# Contour de reference pour les autres contours
-# Essai pour 10 contours de references numerotes de 1 a 10
-
-#moyenne <- formes[[1]]
-#moyenne <- formes[[2]]
-#moyenne <- formes[[3]]
-#moyenne <- formes[[4]]
-moyenne <- formes[[5]]
-
+# Contour de reference choisi sur le Train (Forme 5 du Train)
+moyenne <- formes_train[[5]]
 nb_iter <- 10
 
-# liste vide pour stocker les theta optimaux
-liste_theta_optimal <- vector("list", length(formes))
+# Alignement du TRAIN
+x_reference <- eval.fd(temps, formes_train[[5]]$x)
+y_reference <- eval.fd(temps, formes_train[[5]]$y)
 
-# Iteration dans le but de voir si l'alignement a bien ete effectue
 for (iter in 1:nb_iter) {
   
-  # Aligner toutes les courbes a la courbe de reference numerote entre 1 et 10
-  #x_reference <- eval.fd(temps, formes[[1]]$x)
-  #y_reference <- eval.fd(temps, formes[[1]]$y)
-  
-  #x_reference <- eval.fd(temps, formes[[2]]$x)
-  #y_reference <- eval.fd(temps, formes[[2]]$y)
-  
-  #x_reference <- eval.fd(temps, formes[[3]]$x)
-  #y_reference <- eval.fd(temps, formes[[3]]$y)
-  
-  #x_reference <- eval.fd(temps, formes[[4]]$x)
-  #y_reference <- eval.fd(temps, formes[[4]]$y)
-  
-  x_reference <- eval.fd(temps, formes[[5]]$x)
-  y_reference <- eval.fd(temps, formes[[5]]$y)
-
-  formes_alignees <- lapply(seq_along(formes), function(i) {
-    f <- formes[[i]]
+  formes_alignees_train <- lapply(seq_along(formes_train), function(i) {
+    f <- formes_train[[i]]
     x <- eval.fd(temps, f$x)
     y <- eval.fd(temps, f$y)
     
-    # Liste contenant les erreurs 
     erreurs <- numeric(length(deltas))
     
     for (k in seq_along(deltas)) {
-      
       d <- deltas[k]
-      
-      # Calcul des décalages x_s et y_s
       x_s <- approx(temps, x, (temps + d) %% (2 * pi), rule = 2)$y
       y_s <- approx(temps, y, (temps + d) %% (2 * pi), rule = 2)$y
-      
-      # Stockage de l'erreur dans l'élément 'k'
       erreurs[k] <- sum((x_s - x_reference)^2 + (y_s - y_reference)^2)
     }
     
-    # Trouver le delta optimal qui minimise les erreurs
     d_opt <- deltas[which.min(erreurs)]
     x_shift <- approx(temps, x, (temps + d_opt) %% (2 * pi), rule = 2)$y
     y_shift <- approx(temps, y, (temps + d_opt) %% (2 * pi), rule = 2)$y
     
-    # Rotation optimale
     theta <- rotation_opt(x_shift, y_shift, x_reference, y_reference)
     
     list(
@@ -224,260 +212,270 @@ for (iter in 1:nb_iter) {
     )
   })
   
-  # Extraire les thetas optimaux vers la variable globale
-  liste_theta_optimal <- lapply(formes_alignees, `[[`, "theta")
+  mat_x <- sapply(formes_alignees_train, `[[`, "x")
+  mat_y <- sapply(formes_alignees_train, `[[`, "y")
   
-  # Extraction propre en matrices pour la moyenne
-  mat_x <- sapply(formes_alignees, `[[`, "x")
-  mat_y <- sapply(formes_alignees, `[[`, "y")
-  
-  # Mise à jour de la moyenne apres avoir effectue le lissage et l'alignement
   moyenne$x <- smooth.basis(argvals = temps, y = rowMeans(mat_x), fdParobj = base_fourier)$fd
   moyenne$y <- smooth.basis(argvals = temps, y = rowMeans(mat_y), fdParobj = base_fourier)$fd  
-  message("Itération ", iter, " / ", nb_iter, " terminée")
+  message("Itération Train ", iter, " / ", nb_iter, " terminée")
 }
 
-# Sauvegarde des resultats pour chaque contour de reference different
+# Alignement du TEST sur la même référence du Train
+formes_alignees_test <- lapply(seq_along(formes_test), function(i) {
+  f <- formes_test[[i]]
+  x <- eval.fd(temps, f$x)
+  y <- eval.fd(temps, f$y)
+  
+  erreurs <- numeric(length(deltas))
+  for (k in seq_along(deltas)) {
+    d <- deltas[k]
+    x_s <- approx(temps, x, (temps + d) %% (2 * pi), rule = 2)$y
+    y_s <- approx(temps, y, (temps + d) %% (2 * pi), rule = 2)$y
+    erreurs[k] <- sum((x_s - x_reference)^2 + (y_s - y_reference)^2)
+  }
+  
+  d_opt <- deltas[which.min(erreurs)]
+  x_shift <- approx(temps, x, (temps + d_opt) %% (2 * pi), rule = 2)$y
+  y_shift <- approx(temps, y, (temps + d_opt) %% (2 * pi), rule = 2)$y
+  
+  theta <- rotation_opt(x_shift, y_shift, x_reference, y_reference)
+  
+  list(
+    x = x_shift * cos(theta) - y_shift * sin(theta),
+    y = x_shift * sin(theta) + y_shift * cos(theta),
+    theta = theta
+  )
+})
 
-#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
-#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_2.rds")
-#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_3.rds")
-#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_4.rds")
-saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5.rds")
+# Extraire les theta optimaux
+liste_theta_train <- lapply(formes_alignees_train, `[[`, "theta")
+liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta")
+
+saveRDS(formes_alignees_train, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5_train.rds")
+saveRDS(formes_alignees_test,  "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5_test.rds")
 
 ############################### 4 COMPOSANTES ##################################
 
 #----------------------------------- FPCA --------------------------------------
 
-# Chargement des contours alignés par ICF et qui ont ete lisses
+# Préparation des matrices Train 
+matrice_X_tr <- t(sapply(formes_alignees_train, `[[`, "x"))
+matrice_Y_tr <- t(sapply(formes_alignees_train, `[[`, "y"))
 
-#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
-#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_2.rds")
-#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_3.rds")
-#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_4.rds")
-contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5.rds")
+# Construction de l'array 3D pour le Train
+array_contours_tr <- array(0, dim = c(200, length(formes_train), 2))
+array_contours_tr[,,1] <- t(matrice_X_tr)
+array_contours_tr[,,2] <- t(matrice_Y_tr)
 
-# Filtrage des contours valides 
-indices_valides <- which(!sapply(contours_ICF, is.null))
-formes_valides <- contours_ICF[indices_valides]
-nb_valides <- length(formes_valides)
-message("Nombre de contours utilisés pour FPCA : ", nb_valides)
-
-# Grille temporelle
-temps <- seq(0, 2 * pi, length.out = 200)
-
-# Matrices X et Y 
-matrice_X <- t(sapply(formes_valides, function(f) f$x))
-matrice_Y <- t(sapply(formes_valides, function(f) f$y))
-
-array_contours <- array(0, dim = c(200, nb_valides, 2))
-array_contours[,,1] <- t(matrice_X)
-array_contours[,,2] <- t(matrice_Y)
-
-# Création d'une base fonctionnelle périodique
+# Lissage avec la base de Fourier à 29 fonctions
 fourier_basis <- create.fourier.basis(rangeval = c(0, 2*pi), nbasis = 29)
+fd_contours_tr <- smooth.basis(temps, array_contours_tr, fourier_basis)$fd
 
-# Transformation en objet fonctionnel bivarié (fd)
-fd_contours <- smooth.basis(temps, array_contours, fourier_basis)$fd
+# Exécution de la FPCA sur le Train (6 composantes)
+fpca_result <- pca.fd(fd_contours_tr, nharm = 6)
 
-# Algorithme de PFCA
-fpca_result <- pca.fd(fd_contours, nharm = 6)
-
-# Extraction des variances et affichage
+# Calcul et affichage des variances expliquées
 variances <- fpca_result$varprop * 100
 variance_cumulee <- cumsum(variances)
 
+# Tableau qui va contenir la variabilite de chaque composante principale
 tableau_variance <- data.frame(
   Composante = paste0("FPC", 1:6),
   `Variance_Expliquee (%)` = round(variances[1:6], 2),
   `Variance_Cumulee (%)` = round(variance_cumulee[1:6], 2)
 )
 
+# Afficher les valeurs de variabilite 
 print(tableau_variance)
 
-# Récupération des scores fonctionnels réels 
-scores_FPCA <- apply(fpca_result$scores[, 1:6, ], 1, c)
-scores_FPCA <- t(scores_FPCA)
+# Extraction des scores de Train
+scores_FPCA_tr <- apply(fpca_result$scores[, 1:6, ], 1, c)
+scores_FPCA_tr <- t(scores_FPCA_tr)
+colnames(scores_FPCA_tr) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y"))
 
-# Donner des noms clairs aux colonnes
-colnames(scores_FPCA) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y"))
+# Extraction des matrices Test
+matrice_X_te <- t(sapply(formes_alignees_test, `[[`, "x"))
+matrice_Y_te <- t(sapply(formes_alignees_test, `[[`, "y"))
 
-# Extraction des valeurs propres et calcul des écarts-types uniques
-lambdas <- fpca_result$values # Valeur propre unique pour chaque composante
-sd_harmonics <- sqrt(lambdas) # Calcul de l'ecart-type
+# Centrage par la moyenne du TRAIN (Anti-data leakage)
+mean_x_train <- rowMeans(matrice_X_tr)
+mean_y_train <- rowMeans(matrice_Y_tr)
 
-# Variances en pourcentage
+matrice_X_te_centered <- matrice_X_te - mean_x_train
+matrice_Y_te_centered <- matrice_Y_te - mean_y_train
+
+# Construction de l'array 3D centré pour le Test
+array_contours_te_cent <- array(0, dim = c(200, length(formes_test), 2))
+array_contours_te_cent[,,1] <- t(matrice_X_te_centered)
+array_contours_te_cent[,,2] <- t(matrice_Y_te_centered)
+
+# Lissage avec la MÊME base à 29 fonctions
+fd_contours_te_cent <- smooth.basis(temps, array_contours_te_cent, fourier_basis)$fd
+
+# Calcul des scores par projection matricielle directe des coefficients
+coef_te <- fd_contours_te_cent$coefs      # dim: [29, N_test, 2]
+coef_harm <- fpca_result$harmonics$coefs  # dim: [29, 6, 2]
+
+# Matrice de Gram des fonctions de base
+J <- eval.penalty(fourier_basis, Lfdobj = 0)
+
+scores_FPCA_te_mat <- matrix(0, nrow = length(formes_test), ncol = 12)
+
+# Calcul du produit scalaire pour chaque composante K (1 à 6)
+for (k in 1:6) {
+  # Produit scalaire sur X
+  score_x <- t(coef_te[,,1]) %*% J %*% coef_harm[,k,1]
+  # Produit scalaire sur Y
+  score_y <- t(coef_te[,,2]) %*% J %*% coef_harm[,k,2]
+  
+  scores_FPCA_te_mat[, k]     <- score_x
+  scores_FPCA_te_mat[, k + 6] <- score_y
+}
+
+scores_FPCA_te <- as.data.frame(scores_FPCA_te_mat)
+colnames(scores_FPCA_te) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y"))
+
+# Graphiques des composantes principales
+lambdas <- fpca_result$values 
+sd_harmonics <- sqrt(lambdas) 
 var_pct <- round(fpca_result$varprop * 100, 2)
 
-# Préparation du graphique 2x3 (pour afficher PC1 à PC6 par exemple)
 par(mfrow = c(2, 3), mar = c(4, 4, 3, 1))
-
-# Grille de temps fine pour tracer les courbes lisses
 t_grid <- seq(0, 2 * pi, length.out = 200)
 
-# Courbe moyenne bivariée mu(t) = (mu_x(t), mu_y(t))
 mean_fd <- fpca_result$meanfd
-mean_eval <- eval.fd(t_grid, mean_fd) # Matrice 200 x 1 x 2
+mean_eval <- eval.fd(t_grid, mean_fd) 
 mean_x <- mean_eval[, 1, 1]
 mean_y <- mean_eval[, 1, 2]
 
-# Fonctions propres psi_k(t)
 harmonics_fd <- fpca_result$harmonics
-harm_eval <- eval.fd(t_grid, harmonics_fd) # Matrice 200 x nharm x 2
+harm_eval <- eval.fd(t_grid, harmonics_fd) 
 
-# Boucle sur toutes les composantes
 nombre_composantes <- 6
 for (k in 1:nombre_composantes) {
-  
-  # L'écart-type unique pour la composante k (comme indiqué par ton prof)
   sd_k <- sd_harmonics[k]
-  
-  # Fonctions propres pour X et Y associées à la composante k
   psi_kx <- harm_eval[, k, 1]
   psi_ky <- harm_eval[, k, 2]
   
-  # Déformations à +2 SD et -2 SD
-  plus_2sd_x <- mean_x + 2 * sd_k * psi_kx
-  plus_2sd_y <- mean_y + 2 * sd_k * psi_ky
-  
+  plus_2sd_x  <- mean_x + 2 * sd_k * psi_kx
+  plus_2sd_y  <- mean_y + 2 * sd_k * psi_ky
   moins_2sd_x <- mean_x - 2 * sd_k * psi_kx
   moins_2sd_y <- mean_y - 2 * sd_k * psi_ky
   
-  # Tracé du contour à +2 SD (Rouge)
   plot(plus_2sd_x, plus_2sd_y, type = "l", col = "red", lwd = 2, asp = 1,
        main = paste0("FPC", k, " (", var_pct[k], "%)"),
        xlab = "X", ylab = "Y")
-  
-  # Ajout de la déformation à -2 SD (Bleu pointillés)
   lines(moins_2sd_x, moins_2sd_y, col = "blue", lwd = 2, lty = 2)
-  
-  # Ajout du contour moyen (Noir)
   lines(mean_x, mean_y, col = "black", lwd = 1.5)
 }
 
-# Réinitialiser la grille graphique
 par(mfrow = c(1, 1))
 
 #----------------------------- Classification ----------------------------------
 
-## UTILISATION DE REGRESSION LOGISTIQUE FONCTIONNELLE (pour la classification avec 4 composantes)
+# Récupération des caractéristiques géométriques
+tx_train <- sapply(formes_train, function(f) f$t_x[1])
+ty_train <- sapply(formes_train, function(f) f$t_y[1])
+theta_train <- as.numeric(liste_theta_train)
 
-# Alignement des métadonnées Y (Mélanome = 1, Bénin = 0)
-meta_donnees <- read.csv("C:/Users/kevin/Downloads/Stage_FDA/HAM10000_metadata.csv")
-meta_donnees$Y <- ifelse(meta_donnees$dx == "mel", 1, 0)
+tx_test <- sapply(formes_test, function(f) f$t_x[1])
+ty_test <- sapply(formes_test, function(f) f$t_y[1])
+theta_test <- as.numeric(liste_theta_test)
 
-# Conservation des indices filtrés  
-indices_filtres_initiaux <- which(sapply(mes_contours, function(x) !is.null(x) && nrow(x) > 120))
+# Calcul de l'erreur de reconstruction par rapport à la moyenne du Train
+if (ncol(matrice_X_tr) == 200) {
+  mean_x_vec <- colMeans(matrice_X_tr)
+  mean_y_vec <- colMeans(matrice_Y_tr)
+  erreur_train <- rowSums((matrice_X_tr - matrix(mean_x_vec, nrow = nrow(matrice_X_tr), ncol = 200, byrow = TRUE))^2 +
+                            (matrice_Y_tr - matrix(mean_y_vec, nrow = nrow(matrice_Y_tr), ncol = 200, byrow = TRUE))^2)
+  
+  erreur_test  <- rowSums((matrice_X_te - matrix(mean_x_vec, nrow = nrow(matrice_X_te), ncol = 200, byrow = TRUE))^2 +
+                            (matrice_Y_te - matrix(mean_y_vec, nrow = nrow(matrice_Y_te), ncol = 200, byrow = TRUE))^2)
+} else {
+  mean_x_vec <- rowMeans(matrice_X_tr)
+  mean_y_vec <- rowMeans(matrice_Y_tr)
+  erreur_train <- colSums((matrice_X_tr - mean_x_vec)^2 + (matrice_Y_tr - mean_y_vec)^2)
+  erreur_test  <- colSums((matrice_X_te - mean_x_vec)^2 + (matrice_Y_te - mean_y_vec)^2)
+}
 
-# Conservation des indices valides post-FPCA
-y_valides <- meta_donnees$Y[indices_filtres_initiaux][indices_valides]
-
-# Extraction des translations t_x et t_y depuis la liste initiale
-tx_valides <- sapply(formes[indices_valides], function(f) f$t_x)
-ty_valides <- sapply(formes[indices_valides], function(f) f$t_y)
-
-# Extraction des rotations theta optimaux
-theta_valides <- as.numeric(liste_theta_optimal[indices_valides])
-
-# Calcul du résidu d'alignement 
-mat_x <- sapply(formes_valides, `[[`, "x")
-mat_y <- sapply(formes_valides, `[[`, "y")
-
-mean_x_vec <- rowMeans(mat_x)
-mean_y_vec <- rowMeans(mat_y)
-
-# Calcul du résidu pour chaque grain de beauté
-erreur_valides <- colSums((mat_x - mean_x_vec)^2 + (mat_y - mean_y_vec)^2)
-
-# Conversion des scores FPCA en data.frame
-df_scores <- as.data.frame(scores_FPCA)
-
-# Assemblage complet : Y + Géométrie/Alignement + 12 Composantes FPCA
-df_classification <- cbind(
+# Assemblage des jeux de données
+donnees_train <- cbind(
   data.frame(
-    Y      = factor(y_valides, levels = c(0, 1)),
-    t_x    = tx_valides,
-    t_y    = ty_valides,
-    theta  = theta_valides,
-    erreur = erreur_valides
+    Y      = factor(y_train, levels = c(0, 1)),
+    t_x    = tx_train,
+    t_y    = ty_train,
+    theta  = theta_train,
+    erreur = erreur_train
   ),
-  df_scores
+  as.data.frame(scores_FPCA_tr)
 )
 
-# Nettoyage éventuel des NA
-df_classification <- na.omit(df_classification)
-
-message("Tableau de classification assemblé : ", nrow(df_classification), " lignes x ", ncol(df_classification), " colonnes.")
-head(df_classification[, 1:6])
-
-set.seed(123)
-
-# Separation des donnees en 80% d'entrainement et 20% de test
-train_index <- createDataPartition(df_classification$Y, p = 0.8, list = FALSE)
-
-donnees_train <- df_classification[train_index, ]
-donnees_test  <- df_classification[-train_index, ]
-
-# Calcul des poids inversement proportionnels aux fréquences des classes
-nb_benin    <- sum(donnees_train$Y == 0)
-nb_melanome <- sum(donnees_train$Y == 1)
-
-poids_train <- ifelse(donnees_train$Y == 1, nb_benin / nb_melanome, 1)
-
-# Ajustement du modèle logistique avec TOUTES les covariables 
-modele_logit <- glm(
-  Y ~ ., 
-  data = donnees_train, 
-  family = binomial(link = "logit"), 
-  weights = poids_train
+donnees_test <- cbind(
+  data.frame(
+    Y      = factor(y_test, levels = c(0, 1)),
+    t_x    = tx_test,
+    t_y    = ty_test,
+    theta  = theta_test,
+    erreur = erreur_test
+  ),
+  as.data.frame(scores_FPCA_te)
 )
 
-# Affichage des coefficients du modèle et des p-values
+# Calcul des poids dans un vecteur séparé
+nb_benin     <- sum(donnees_train$Y == 0)
+nb_melanome  <- sum(donnees_train$Y == 1)
+poids_vector <- ifelse(donnees_train$Y == 1, nb_benin / nb_melanome, 1)
+
+# Ajustement du modèle de régression logistique
+modele_logit <- suppressWarnings(
+  glm(
+    Y ~ ., 
+    data = donnees_train, 
+    family = binomial(link = "logit"), 
+    weights = poids_vector
+  )
+)
+
 summary(modele_logit)
 
-# Prédiction des probabilités pour le jeu de test
+# Prédiction des probabilités sur l'échantillon de Test
 probabilites_test <- predict(modele_logit, newdata = donnees_test, type = "response")
 
-# Décision binaire au seuil standard 
-seuil_decision <- 0.50
+# Analyse ROC et calcul de l'AUC
+courbe_roc <- roc(donnees_test$Y, probabilites_test)
+auc_valeur <- as.numeric(auc(courbe_roc))
+
+# Extraction du seuil de décision optimal (Indice de Youden)
+coords_opt <- coords(courbe_roc, "best", ret = "threshold")
+seuil_decision <- as.numeric(coords_opt[1, "threshold"])
+
+# 9. Application du seuil optimal pour la classification binaire
 y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
 
-# Matrice de confusion (Sensibilité, Spécificité, Accuracy)
+# Matrice de confusion et métriques de performance
 matrice_eval <- confusionMatrix(y_pred_test, donnees_test$Y, positive = "1")
 print(matrice_eval)
 
-# Calcul et affichage de la courbe ROC et de l'AUC
-courbe_roc <- roc(donnees_test$Y, probabilites_test)
-auc_valeur <- auc(courbe_roc)
-
+# Tracé de la courbe ROC
 plot(
   courbe_roc, 
   col = "firebrick", 
   lwd = 3, 
   main = paste("Courbe ROC - Modèle Logistique FDA (AUC =", round(auc_valeur, 3), ")")
 )
-
 grid()
 
-# Calcul de la courbe ROC et de l'AUC
-courbe_roc <- roc(donnees_test$Y, probabilites_test)
-auc_valeur <- as.numeric(auc(courbe_roc))
-
-# Extrait des métriques de la matrice de confusion (Caret)
-matrice_eval <- confusionMatrix(y_pred_test, donnees_test$Y, positive = "1")
-
+# Extraction et affichage des métriques clés
 accuracy    <- as.numeric(matrice_eval$overall["Accuracy"])
 precision   <- as.numeric(matrice_eval$byClass["Precision"])
+sensibilite <- as.numeric(matrice_eval$byClass["Sensitivity"])
 
-# Calcul du F1-Score 
 f1_score <- as.numeric(matrice_eval$byClass["F1"])
-
-# Si le F1 renvoie NA 
 if (is.na(f1_score)) {
   f1_score <- 2 * (precision * sensibilite) / (precision + sensibilite)
 }
 
-# Affichage des resultats
+# Afficher les metriques de performance
 cat(sprintf("AUC         : %.4f\n", auc_valeur))
 cat(sprintf("Accuracy    : %.4f (%.2f%%)\n", accuracy, accuracy * 100))
 cat(sprintf("F1-Score    : %.4f\n", f1_score))
