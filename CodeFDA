@@ -143,6 +143,8 @@ contour_to_fd <- function(contour) {
 # fonction qui va seulement tenir compte des contours valides
 formes <- lapply(contours_valides, contour_to_fd)
 
+saveRDS(formes, "C:/Users/kevin/Downloads/Stage_FDA/formes_lissees.rds")
+
 # Alignement par Procrustes 
 temps <- seq(0, 2*pi, length.out = 200) # Premier parametre
 deltas <- seq(0, 2*pi, length.out = 40) # Deuxieme parametre
@@ -154,7 +156,15 @@ rotation_opt <- function(x, y, x_reference, y_reference) {
   atan2(sum(x*y_reference - y*x_reference), sum(x*x_reference + y*y_reference))
 }
 
-moyenne <- formes[[1]]
+# Contour de reference pour les autres contours
+# Essai pour 10 contours de references numerotes de 1 a 10
+
+#moyenne <- formes[[1]]
+#moyenne <- formes[[2]]
+#moyenne <- formes[[3]]
+#moyenne <- formes[[4]]
+moyenne <- formes[[5]]
+
 nb_iter <- 10
 
 # liste vide pour stocker les theta optimaux
@@ -163,10 +173,22 @@ liste_theta_optimal <- vector("list", length(formes))
 # Iteration dans le but de voir si l'alignement a bien ete effectue
 for (iter in 1:nb_iter) {
   
-  # Aligner toutes les courbes a la premiere courbe comme reference
-  x_reference <- eval.fd(temps, formes[[1]]$x)
-  y_reference <- eval.fd(temps, formes[[1]]$y)
+  # Aligner toutes les courbes a la courbe de reference numerote entre 1 et 10
+  #x_reference <- eval.fd(temps, formes[[1]]$x)
+  #y_reference <- eval.fd(temps, formes[[1]]$y)
   
+  #x_reference <- eval.fd(temps, formes[[2]]$x)
+  #y_reference <- eval.fd(temps, formes[[2]]$y)
+  
+  #x_reference <- eval.fd(temps, formes[[3]]$x)
+  #y_reference <- eval.fd(temps, formes[[3]]$y)
+  
+  #x_reference <- eval.fd(temps, formes[[4]]$x)
+  #y_reference <- eval.fd(temps, formes[[4]]$y)
+  
+  x_reference <- eval.fd(temps, formes[[5]]$x)
+  y_reference <- eval.fd(temps, formes[[5]]$y)
+
   formes_alignees <- lapply(seq_along(formes), function(i) {
     f <- formes[[i]]
     x <- eval.fd(temps, f$x)
@@ -175,7 +197,6 @@ for (iter in 1:nb_iter) {
     # Liste contenant les erreurs 
     erreurs <- numeric(length(deltas))
     
-    # 2. La boucle for (variable de boucle renommée 'k' pour éviter le conflit avec 'iter')
     for (k in seq_along(deltas)) {
       
       d <- deltas[k]
@@ -216,15 +237,25 @@ for (iter in 1:nb_iter) {
   message("Itération ", iter, " / ", nb_iter, " terminée")
 }
 
-# Sauvegarde des resultats
-saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
+# Sauvegarde des resultats pour chaque contour de reference different
+
+#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
+#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_2.rds")
+#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_3.rds")
+#saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_4.rds")
+saveRDS(formes_alignees, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5.rds")
 
 ############################### 4 COMPOSANTES ##################################
 
 #----------------------------------- FPCA --------------------------------------
 
 # Chargement des contours alignés par ICF et qui ont ete lisses
-contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
+
+#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF.rds")
+#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_2.rds")
+#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_3.rds")
+#contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_4.rds")
+contours_ICF <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5.rds")
 
 # Filtrage des contours valides 
 indices_valides <- which(!sapply(contours_ICF, is.null))
@@ -407,7 +438,7 @@ summary(modele_logit)
 # Prédiction des probabilités pour le jeu de test
 probabilites_test <- predict(modele_logit, newdata = donnees_test, type = "response")
 
-# Décision binaire au seuil standard (p = 0.50)
+# Décision binaire au seuil standard 
 seuil_decision <- 0.50
 y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
 
