@@ -12,6 +12,7 @@ library(funData)
 library(ggplot2)
 library(caret)
 library(pROC)
+library(RcppCNPy)
 
 ###################### Transformation en images binaires #######################
 
@@ -115,13 +116,16 @@ if (!is.null(un_contour)) {
 mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
 
 # Filtrer les indices des contours valides 
-indices_valides_init <- which(sapply(mes_contours, function(x) !is.null(x) && nrow(x) > 120))
+indices_valides_init <- seq_along(mes_contours)
 contours_valides     <- mes_contours[indices_valides_init]
 
 # Alignement des métadonnées Y
-meta_donnees <- read.csv("C:/Users/kevin/Downloads/Stage_FDA/HAM10000_metadata.csv")
-meta_donnees$Y <- ifelse(meta_donnees$dx == "mel", 1, 0)
-y_valides <- meta_donnees$Y[indices_valides_init]
+np <- import("numpy")
+Y <- np$load("C:/Users/kevin/Downloads/y.npy")
+Y <- py_to_r(Y)
+Y <- ifelse(Y == "mel", 1, 0)
+
+y_valides <- Y[indices_valides_init]
 
 # Changement en base de Fourier 
 base_fourier <- create.fourier.basis(rangeval = c(0, 2*pi), nbasis = 101)
@@ -137,10 +141,15 @@ contour_to_fd <- function(contour) {
   s <- c(0, cumsum(sqrt(diff(x)^2 + diff(y)^2)))
   t <- 2 * pi * s / max(s)
   
+  # Reechantillonner de facon uniforme
+  t_new <- seq(0, 2*pi, length.out = 200)
+  x_new <- approx(t, x, xout = t_new, method = "linear", rule = 2)$y
+  y_new <- approx(t, y, xout = t_new, method = "linear", rule = 2)$y
+  
   # Lissage par Fourier
   list(
-    x = smooth.basis(t, x, fdParobj = base_fourier)$fd,
-    y = smooth.basis(t, y, fdParobj = base_fourier)$fd,
+    x = smooth.basis(t_new, x_new, fdParobj = base_fourier)$fd,
+    y = smooth.basis(t_new, y_new, fdParobj = base_fourier)$fd,
     t_x = mean(contour$x),
     t_y = mean(contour$y)
   )
@@ -163,7 +172,8 @@ y_train      <- y_valides[train_indices]
 
 # Formes qui vont etre dans le test
 formes_test  <- formes[-train_indices]
-y_test       <- y_valides[-train_indices]
+y_valides <- as.vector(y_valides)
+y_test <- y_valides[-train_indices]
 
 ########################### Alignement par Procrustes ##########################
 
@@ -176,12 +186,12 @@ rotation_opt <- function(x, y, x_reference, y_reference) {
 }
 
 # Contour de reference choisi sur le Train (Forme 5 du Train)
-moyenne <- formes_train[[5]]
+moyenne <- formes_train[[1]]
 nb_iter <- 10
 
 # Alignement du TRAIN
-x_reference <- eval.fd(temps, formes_train[[5]]$x)
-y_reference <- eval.fd(temps, formes_train[[5]]$y)
+x_reference <- eval.fd(temps, formes_train[[1]]$x)
+y_reference <- eval.fd(temps, formes_train[[1]]$y)
 
 for (iter in 1:nb_iter) {
   
@@ -251,8 +261,8 @@ formes_alignees_test <- lapply(seq_along(formes_test), function(i) {
 liste_theta_train <- lapply(formes_alignees_train, `[[`, "theta")
 liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta")
 
-saveRDS(formes_alignees_train, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5_train.rds")
-saveRDS(formes_alignees_test,  "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_5_test.rds")
+saveRDS(formes_alignees_train, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_1_train.rds")
+saveRDS(formes_alignees_test,  "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_1_test.rds")
 
 ############################### 4 COMPOSANTES ##################################
 
