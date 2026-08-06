@@ -2,7 +2,7 @@
 ################################## Stage sur FDA ###############################
 ################################################################################
 
-# Importation des bibliotheques
+# Importation des bibliothèques
 library(reticulate)
 library(fda)
 library(fda.usc)
@@ -25,35 +25,37 @@ x_seg <- np$load("C:/Users/kevin/Downloads/X_segmented.npy", mmap_mode = "r")
 # Pour produire des images en noir et blanc
 bw_logical_py <- x_seg$any(axis = 3L)
 
-# Images sous forme de booleens
+# Images sous forme de booléens
 bw_all_logical <- py_to_r(bw_logical_py)
 
-# Transformation en image binaire (0 et 1 pour differencier les 2 couleurs)
+# Transformation en images binaires (0 et 1 pour differencier les 2 couleurs)
 bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical))
 
-# Sauvegarde du nouveau fichier cree
+# Sauvegarde du nouveau fichier créé
 saveRDS(
   bw_all, 
   file = "C:/Users/kevin/Downloads/X_binaire2.rds", 
   compress = FALSE
 )
 
-# Essai pour charger le nouveau fichier cree
+# Essai pour charger le nouveau fichier créé
 test_load <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/X_binaire2.rds")
+
 # Exemple de code pour voir une des images binaires quelconque
-une_image <- bw_all[42, , ]
+une_image <- bw_all[42, , ] # Ici, on prend le grain de beauté 42
+
 # Affichage de l'image binaire
 image(une_image, col = c("black", "white"), useRaster = TRUE)
 
 ########################## Extraction de contours ##############################
 
-# Lecture des donnees
+# Lecture des données
 donnees_grains <- readRDS("C:/Users/kevin/Downloads/X_binaire2.rds")
 
-# Nombre de grains de beaute dans les donnees
+# Nombre de grains de beauté dans les données
 nb_images <- dim(donnees_grains)[1]
 
-# Liste pour stocker les contours contenant les coordonnees
+# Liste pour stocker les contours contenant les coordonnées
 liste_contours <- vector("list", nb_images)
 
 # Utilisation de l'algorithme de Marching Square pour tracer les contours
@@ -66,7 +68,7 @@ for (index in 1:nb_images) {
     levels = 0.3
   )
   
-  # Si la longueur du contour est positive, alors, tout s'est bien passe
+  # Si la longueur du contour est positive, alors, tout s'est bien passé
   if (length(contour_trace) > 0) {
     # On extrait le premier contour trouvé
     df_contour <- data.frame(
@@ -74,19 +76,19 @@ for (index in 1:nb_images) {
       y = contour_trace[[1]]$y
     )
     
-    # Stocker les coordonnes du contour
+    # Stocker les coordonnées du contour
     liste_contours[[index]] <- df_contour
   } else {
     liste_contours[[index]] <- NULL
   }
   
-  # Message pour avertir que les contours ont bien ete traites
+  # Message pour avertir que les contours ont bien été traités
   if (index %% 100 == 0) {
     message("L'image a ete bien traitee.")
   }
 } 
 
-# Sauvegarde de ce nouveau fichier contenant les contours sous forme numerique
+# Sauvegarde de ce nouveau fichier contenant les contours sous forme numérique
 saveRDS(liste_contours, "C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
 
 ## Pour voir un exemple de contour
@@ -98,7 +100,7 @@ mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_pa
 index_choisi <- 42 # au hasard
 un_contour <- mes_contours[[index_choisi]] 
 
-# Tracer le contour du grain de beaute
+# Tracer le contour du grain de beauté
 if (!is.null(un_contour)) {
   plot(un_contour$x, un_contour$y, 
        type = "l",          # "ligne continue
@@ -110,7 +112,7 @@ if (!is.null(un_contour)) {
        ylab = "Coordonnées Y")
 } 
 
-##################### Lissage & Split Train/Test Initial #######################
+##################### Lissage & Séparation Train/Test Initial #######################
 
 # Chargement du fichier contenant les contours extraits
 mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
@@ -141,7 +143,7 @@ contour_to_fd <- function(contour) {
   s <- c(0, cumsum(sqrt(diff(x)^2 + diff(y)^2)))
   t <- 2 * pi * s / max(s)
   
-  # Reechantillonner de facon uniforme
+  # Réechantillonner de façon uniforme
   t_new <- seq(0, 2*pi, length.out = 200)
   x_new <- approx(t, x, xout = t_new, method = "linear", rule = 2)$y
   y_new <- approx(t, y, xout = t_new, method = "linear", rule = 2)$y
@@ -163,19 +165,19 @@ saveRDS(formes, "C:/Users/kevin/Downloads/Stage_FDA/formes_lissees.rds")
 # Split Entrainement/Test
 set.seed(123)
 
-# 80% des donnees a l'entrainement et 20% des donnees au test
+# 80% des données a l'entrainement et 20% des données au test
 train_indices <- createDataPartition(y_valides, p = 0.8, list = FALSE)
 
-# Formes qui vont etre dans l'entrainement
+# Formes qui vont être dans l'entrainement
 formes_train <- formes[train_indices]
 y_train      <- y_valides[train_indices]
 
-# Formes qui vont etre dans le test
+# Formes qui vont être dans le test
 formes_test  <- formes[-train_indices]
 y_valides <- as.vector(y_valides)
 y_test <- y_valides[-train_indices]
 
-########################### Alignement par Procrustes ##########################
+########################### Alignement par ICF ##########################
 
 temps <- seq(0, 2*pi, length.out = 200) # Premier parametre
 deltas <- seq(0, 2*pi, length.out = 40) # Deuxieme parametre
@@ -185,13 +187,13 @@ rotation_opt <- function(x, y, x_reference, y_reference) {
   atan2(sum(x*y_reference - y*x_reference), sum(x*x_reference + y*y_reference))
 }
 
-# Contour de reference choisi sur le Train (Forme 5 du Train)
-moyenne <- formes_train[[1]]
+# Contour de référence choisi sur le Train (Pouvant aller de 1 a 5)
+moyenne <- formes_train[[1]] # Ici, on choisit de prendre le premier contour comme référence
 nb_iter <- 10
 
-# Alignement du TRAIN
-x_reference <- eval.fd(temps, formes_train[[1]]$x)
-y_reference <- eval.fd(temps, formes_train[[1]]$y)
+# Alignement du TRAIN 
+x_reference <- eval.fd(temps, formes_train[[1]]$x) # Ici, le premier contour comme référence
+y_reference <- eval.fd(temps, formes_train[[1]]$y) # Ici, le premier contour comme référence
 
 for (iter in 1:nb_iter) {
   
@@ -261,6 +263,7 @@ formes_alignees_test <- lapply(seq_along(formes_test), function(i) {
 liste_theta_train <- lapply(formes_alignees_train, `[[`, "theta")
 liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta")
 
+# Ici, le premier contour comme référence que vient la sauvegarde
 saveRDS(formes_alignees_train, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_1_train.rds")
 saveRDS(formes_alignees_test,  "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_1_test.rds")
 
@@ -288,14 +291,14 @@ fpca_result <- pca.fd(fd_contours_tr, nharm = 6)
 variances <- fpca_result$varprop * 100
 variance_cumulee <- cumsum(variances)
 
-# Tableau qui va contenir la variabilite de chaque composante principale
+# Tableau qui va contenir la variabilité de chaque composante principale
 tableau_variance <- data.frame(
   Composante = paste0("FPC", 1:6),
   `Variance_Expliquee (%)` = round(variances[1:6], 2),
   `Variance_Cumulee (%)` = round(variance_cumulee[1:6], 2)
 )
 
-# Afficher les valeurs de variabilite 
+# Afficher les valeurs de variabilité
 print(tableau_variance)
 
 # Extraction des scores de Train
@@ -307,7 +310,7 @@ colnames(scores_FPCA_tr) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y"))
 matrice_X_te <- t(sapply(formes_alignees_test, `[[`, "x"))
 matrice_Y_te <- t(sapply(formes_alignees_test, `[[`, "y"))
 
-# Centrage par la moyenne du TRAIN (Anti-data leakage)
+# Centrage par la moyenne du TRAIN 
 mean_x_train <- rowMeans(matrice_X_tr)
 mean_y_train <- rowMeans(matrice_Y_tr)
 
@@ -319,7 +322,7 @@ array_contours_te_cent <- array(0, dim = c(200, length(formes_test), 2))
 array_contours_te_cent[,,1] <- t(matrice_X_te_centered)
 array_contours_te_cent[,,2] <- t(matrice_Y_te_centered)
 
-# Lissage avec la MÊME base à 29 fonctions
+# Lissage avec la même base de Fourier, mais à 29 fonctions
 fd_contours_te_cent <- smooth.basis(temps, array_contours_te_cent, fourier_basis)$fd
 
 # Calcul des scores par projection matricielle directe des coefficients
@@ -446,6 +449,7 @@ modele_logit <- suppressWarnings(
   )
 )
 
+# Imprimer les valeur-p pour chaque paramètre (varialble) dans le but de voir leur niveau de signification
 summary(modele_logit)
 
 # Prédiction des probabilités sur l'échantillon de Test
@@ -459,7 +463,7 @@ auc_valeur <- as.numeric(auc(courbe_roc))
 coords_opt <- coords(courbe_roc, "best", ret = "threshold")
 seuil_decision <- as.numeric(coords_opt[1, "threshold"])
 
-# 9. Application du seuil optimal pour la classification binaire
+# Application du seuil optimal pour la classification binaire
 y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
 
 # Matrice de confusion et métriques de performance
@@ -485,7 +489,7 @@ if (is.na(f1_score)) {
   f1_score <- 2 * (precision * sensibilite) / (precision + sensibilite)
 }
 
-# Afficher les metriques de performance
+# Afficher les métriques de performance
 cat(sprintf("AUC         : %.4f\n", auc_valeur))
 cat(sprintf("Accuracy    : %.4f (%.2f%%)\n", accuracy, accuracy * 100))
 cat(sprintf("F1-Score    : %.4f\n", f1_score))
