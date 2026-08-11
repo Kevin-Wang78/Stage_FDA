@@ -107,7 +107,8 @@ Université du Québec à Montréal
 
 ---
 
-## Référence principale
+## Références principales
 
 * Ramsay, J. O., & Silverman, B. W. (2005). *Functional Data Analysis*.
+* Davila, A., Moindjié, I. A., & Beaulac, C. (2026). Comparing shape-based and pixel-based approaches for melanoma detection (Doctoral dissertation, Université du Québec à Montréal).
 
