@@ -69,7 +69,7 @@ install.packages(c(
 
 Les données originales proviennent de la base de données **HAM10000**. 
 Cependant, une partie du prétraitement a été réalisée par Andréa Davila.
-Le fichier, provenant d'Andréa Davila, se trouve dans le lien suivant: 
+Le fichier, du nom de X_segmented.npy, se trouve dans le lien suivant: 
 https://drive.google.com/drive/folders/1m8beM0viLixcCELAB5GGaP8yJT8YvV4h?usp=sharing
 
 ---
