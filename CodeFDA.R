@@ -20,7 +20,7 @@ library(RcppCNPy)
 np <- import("numpy", convert = FALSE)
 
 # Extraire du fichier X_segmented 
-x_seg <- np$load("C:/Users/kevin/Downloads/X_segmented.npy", mmap_mode = "r")
+x_seg <- np$load("data/X_segmented.npy", mmap_mode = "r")
 
 # Pour produire des images en noir et blanc
 bw_logical_py <- x_seg$any(axis = 3L)
@@ -34,12 +34,12 @@ bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical))
 # Sauvegarde du nouveau fichier créé
 saveRDS(
   bw_all, 
-  file = "C:/Users/kevin/Downloads/X_binaire2.rds", 
+  file = "data/X_binaire2.rds", 
   compress = FALSE
 )
 
 # Essai pour charger le nouveau fichier créé
-test_load <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/X_binaire2.rds")
+test_load <- readRDS("data/X_binaire2.rds")
 
 # Exemple de code pour voir une des images binaires quelconque
 une_image <- bw_all[42, , ] # Ici, on prend le grain de beauté 42
@@ -50,7 +50,7 @@ image(une_image, col = c("black", "white"), useRaster = TRUE)
 ########################## Extraction de contours ##############################
 
 # Lecture des données
-donnees_grains <- readRDS("C:/Users/kevin/Downloads/X_binaire2.rds")
+donnees_grains <- readRDS("data/X_binaire2.rds")
 
 # Nombre de grains de beauté dans les données
 nb_images <- dim(donnees_grains)[1]
@@ -89,12 +89,15 @@ for (index in 1:nb_images) {
 } 
 
 # Sauvegarde de ce nouveau fichier contenant les contours sous forme numérique
-saveRDS(liste_contours, "C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
+saveRDS(
+  liste_contours,
+  "data/contours_extraits_partie1.rds"
+)
 
 ## Pour voir un exemple de contour
 
 # Chargement du fichier
-mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
+mes_contours <- readRDS("data/contours_extraits_partie1.rds")
 
 # Index choisi pour commencer le contour
 index_choisi <- 42 # au hasard
@@ -115,7 +118,7 @@ if (!is.null(un_contour)) {
 ##################### Lissage & Séparation Train/Test Initial #######################
 
 # Chargement du fichier contenant les contours extraits
-mes_contours <- readRDS("C:/Users/kevin/Downloads/Stage_FDA/contours_extraits_partie1.rds")
+mes_contours <- readRDS("data/contours_extraits_partie1.rds")
 
 # Filtrer les indices des contours valides 
 indices_valides_init <- seq_along(mes_contours)
@@ -123,7 +126,7 @@ contours_valides     <- mes_contours[indices_valides_init]
 
 # Alignement des métadonnées Y
 np <- import("numpy")
-Y <- np$load("C:/Users/kevin/Downloads/y.npy")
+Y <- np$load("data/y.npy")
 Y <- py_to_r(Y)
 Y <- ifelse(Y == "mel", 1, 0)
 
@@ -160,7 +163,7 @@ contour_to_fd <- function(contour) {
 # Fonction qui va seulement tenir compte des contours valides
 formes <- lapply(contours_valides, contour_to_fd)
 
-saveRDS(formes, "C:/Users/kevin/Downloads/Stage_FDA/formes_lissees.rds")
+saveRDS(formes, "data/formes_lissees.rds")
 
 # Split Entrainement/Test
 set.seed(123)
@@ -264,8 +267,15 @@ liste_theta_train <- lapply(formes_alignees_train, `[[`, "theta")
 liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta")
 
 # Ici, le premier contour comme référence que vient la sauvegarde
-saveRDS(formes_alignees_train, "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_1_train.rds")
-saveRDS(formes_alignees_test,  "C:/Users/kevin/Downloads/Stage_FDA/contours_alignes_ICF_1_test.rds")
+saveRDS(
+  formes_alignees_train,
+  "data/contours_alignes_ICF_1_train.rds"
+)
+
+saveRDS(
+  formes_alignees_test,
+  "data/contours_alignes_ICF_1_test.rds"
+)
 
 ############################### 4 COMPOSANTES ##################################
 
