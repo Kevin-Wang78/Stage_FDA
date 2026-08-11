@@ -29,7 +29,7 @@ bw_logical_py <- x_seg$any(axis = 3L)
 bw_all_logical <- py_to_r(bw_logical_py)
 
 # Transformation en images binaires (0 et 1 pour differencier les 2 couleurs)
-bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical)) ## 1. Fin de Prétraitement des données
+bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical)) 
 
 # Sauvegarde du nouveau fichier créé
 saveRDS(
@@ -158,10 +158,10 @@ contour_to_fd <- function(contour) {
     t_x = mean(contour$x),
     t_y = mean(contour$y)
   )
-} ## 2. Fin de Lissage des contours.
+} 
 
 # Fonction qui va seulement tenir compte des contours valides
-formes <- lapply(contours_valides, contour_to_fd)
+formes <- lapply(contours_valides, contour_to_fd) /# 1. Résultat des contours lissés
 
 saveRDS(formes, "data/formes_lissees.rds")
 
@@ -264,7 +264,7 @@ formes_alignees_test <- lapply(seq_along(formes_test), function(i) {
 
 # Extraire les theta optimaux
 liste_theta_train <- lapply(formes_alignees_train, `[[`, "theta")
-liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta") ## 3. Fin de l'Alignement des contours
+liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta") ## 2. Résultat des contours alignés
 
 # Ici, le premier contour comme référence que vient la sauvegarde
 saveRDS(
@@ -353,10 +353,10 @@ for (k in 1:6) {
   
   scores_FPCA_te_mat[, k]     <- score_x
   scores_FPCA_te_mat[, k + 6] <- score_y
-}
+} ## 3. Résultat des composantes principales
 
 scores_FPCA_te <- as.data.frame(scores_FPCA_te_mat)
-colnames(scores_FPCA_te) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y")) ## 4. Fin de FPCA
+colnames(scores_FPCA_te) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y"))
 
 # Graphiques des composantes principales
 lambdas <- fpca_result$values 
@@ -390,7 +390,7 @@ for (k in 1:nombre_composantes) {
        xlab = "X", ylab = "Y")
   lines(moins_2sd_x, moins_2sd_y, col = "blue", lwd = 2, lty = 2)
   lines(mean_x, mean_y, col = "black", lwd = 1.5)
-}
+} ## 4. Résultat des scores de FPCA
 
 par(mfrow = c(1, 1))
 
@@ -474,7 +474,7 @@ coords_opt <- coords(courbe_roc, "best", ret = "threshold")
 seuil_decision <- as.numeric(coords_opt[1, "threshold"])
 
 # Application du seuil optimal pour la classification binaire
-y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1)) ## 5. Fin de la Classification
+y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
 
 # Matrice de confusion et métriques de performance
 matrice_eval <- confusionMatrix(y_pred_test, donnees_test$Y, positive = "1")
@@ -487,7 +487,7 @@ plot(
   lwd = 3, 
   main = paste("Courbe ROC - Modèle Logistique FDA (AUC =", round(auc_valeur, 3), ")")
 )
-grid()
+grid() ## 5. Résultat des courbes ROC
 
 # Extraction et affichage des métriques clés
 accuracy    <- as.numeric(matrice_eval$overall["Accuracy"])
@@ -502,7 +502,7 @@ if (is.na(f1_score)) {
 # Afficher les métriques de performance
 cat(sprintf("AUC         : %.4f\n", auc_valeur))
 cat(sprintf("Accuracy    : %.4f (%.2f%%)\n", accuracy, accuracy * 100))
-cat(sprintf("F1-Score    : %.4f\n", f1_score)) ## 6. Fin d'Évaluation des performances
+cat(sprintf("F1-Score    : %.4f\n", f1_score)) ## 6. Résultat des indicateurs de performance
 
 # Regarder la valeur pour l'exactitude équilibré dans le but de montrer que cela est plus performant
 balanced_accuracy <- as.numeric(matrice_eval$byClass["Balanced Accuracy"])
