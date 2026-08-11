@@ -19,10 +19,8 @@ Ce projet vise principalement à montrer que l'utilisation de l'ADF permet de di
 ```text
 Projet/
 │
-├── data/          # Données utilisées
-├── scripts/       # Scripts R
 ├── figures/       # Figures générées
-├── results/       # Résultats obtenus
+├── code/          # Code avec R
 ├── rapport/       # Rapport final
 └── README.md
 ```
