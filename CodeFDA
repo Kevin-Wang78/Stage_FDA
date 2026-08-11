@@ -494,6 +494,12 @@ cat(sprintf("AUC         : %.4f\n", auc_valeur))
 cat(sprintf("Accuracy    : %.4f (%.2f%%)\n", accuracy, accuracy * 100))
 cat(sprintf("F1-Score    : %.4f\n", f1_score))
 
+# Regarder la valeur pour l'exactitude équilibré dans le but de montrer que cela est plus performant
+balanced_accuracy <- as.numeric(matrice_eval$byClass["Balanced Accuracy"])
+balanced_accuracy
+balanced_accuracy_arrondi <- round(balanced_accuracy, 4)
+print(balanced_accuracy_arrondi * 100)
+
 
 
 
