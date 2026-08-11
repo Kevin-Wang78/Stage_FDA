@@ -98,7 +98,7 @@ Les scripts permettent de générer :
 
 ---
 
-## Auteur
+## Auteurs
 
 **Kevin Wang et Cédric Beaulac**
 
