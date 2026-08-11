@@ -29,7 +29,7 @@ bw_logical_py <- x_seg$any(axis = 3L)
 bw_all_logical <- py_to_r(bw_logical_py)
 
 # Transformation en images binaires (0 et 1 pour differencier les 2 couleurs)
-bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical))
+bw_all <- array(as.integer(bw_all_logical), dim = dim(bw_all_logical)) ## 1. Fin de Prétraitement des données
 
 # Sauvegarde du nouveau fichier créé
 saveRDS(
@@ -158,7 +158,7 @@ contour_to_fd <- function(contour) {
     t_x = mean(contour$x),
     t_y = mean(contour$y)
   )
-}
+} ## 2. Fin de Lissage des contours.
 
 # Fonction qui va seulement tenir compte des contours valides
 formes <- lapply(contours_valides, contour_to_fd)
@@ -264,7 +264,7 @@ formes_alignees_test <- lapply(seq_along(formes_test), function(i) {
 
 # Extraire les theta optimaux
 liste_theta_train <- lapply(formes_alignees_train, `[[`, "theta")
-liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta")
+liste_theta_test  <- lapply(formes_alignees_test,  `[[`, "theta") ## 3. Fin de l'Alignement des contours
 
 # Ici, le premier contour comme référence que vient la sauvegarde
 saveRDS(
@@ -356,7 +356,7 @@ for (k in 1:6) {
 }
 
 scores_FPCA_te <- as.data.frame(scores_FPCA_te_mat)
-colnames(scores_FPCA_te) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y"))
+colnames(scores_FPCA_te) <- c(paste0("PC", 1:6, "_X"), paste0("PC", 1:6, "_Y")) ## 4. Fin de FPCA
 
 # Graphiques des composantes principales
 lambdas <- fpca_result$values 
@@ -474,11 +474,11 @@ coords_opt <- coords(courbe_roc, "best", ret = "threshold")
 seuil_decision <- as.numeric(coords_opt[1, "threshold"])
 
 # Application du seuil optimal pour la classification binaire
-y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1))
+y_pred_test <- factor(ifelse(probabilites_test > seuil_decision, 1, 0), levels = c(0, 1)) ## 5. Fin de la Classification
 
 # Matrice de confusion et métriques de performance
 matrice_eval <- confusionMatrix(y_pred_test, donnees_test$Y, positive = "1")
-print(matrice_eval)
+print(matrice_eval) 
 
 # Tracé de la courbe ROC
 plot(
@@ -502,7 +502,7 @@ if (is.na(f1_score)) {
 # Afficher les métriques de performance
 cat(sprintf("AUC         : %.4f\n", auc_valeur))
 cat(sprintf("Accuracy    : %.4f (%.2f%%)\n", accuracy, accuracy * 100))
-cat(sprintf("F1-Score    : %.4f\n", f1_score))
+cat(sprintf("F1-Score    : %.4f\n", f1_score)) ## 6. Fin d'Évaluation des performances
 
 # Regarder la valeur pour l'exactitude équilibré dans le but de montrer que cela est plus performant
 balanced_accuracy <- as.numeric(matrice_eval$byClass["Balanced Accuracy"])
