@@ -12,7 +12,7 @@ Les contours sont d'abord lissés et représentés à l'aide d'une base de Fouri
 
 L'article associé à ce projet est disponible sur Zenodo notamment :
 
-**Article :** [Titre de ton article](https://doi.org/10.5281/zenodo.21896795)
+**Article :** [Analyse fonctionnelle des données dans les images](https://doi.org/10.5281/zenodo.21896795)
 
 **DOI :** [10.5281/zenodo.21896795](https://doi.org/10.5281/zenodo.21896795)
 
