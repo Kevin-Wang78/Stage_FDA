@@ -99,12 +99,12 @@ Exécuter les scripts dans l'ordre suivant :
 
 Les scripts permettent de générer :
 
-* les contours lissés ;
-* les contours alignés ;
-* les composantes principales fonctionnelles ;
-* les scores FPCA ;
-* les courbes ROC ;
-* les indicateurs de performance (exactitude, AUC, F1).
+1. les contours lissés ;
+2. les contours alignés ;
+3. les composantes principales fonctionnelles ;
+4. les scores FPCA ;
+5. les courbes ROC ;
+6. les indicateurs de performance (exactitude, AUC, F1).
 
 ---
 
