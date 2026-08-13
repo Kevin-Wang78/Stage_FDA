@@ -161,7 +161,7 @@ contour_to_fd <- function(contour) {
 } 
 
 # Fonction qui va seulement tenir compte des contours valides
-formes <- lapply(contours_valides, contour_to_fd) /# 1. Résultat des contours lissés
+formes <- lapply(contours_valides, contour_to_fd) ## 1. Résultat des contours lissés
 
 saveRDS(formes, "data/formes_lissees.rds")
 
